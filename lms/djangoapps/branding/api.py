@@ -181,7 +181,7 @@ def _footer_connect_links():
         }
         for link_name, link_url, link_title in [
             ("blog", marketing_link("BLOG"), _("Blog")),
-            ("contact", _build_support_form_url(), _("Contact Us")),
+#            ("contact", _build_support_form_url(), _("Contact Us")),  #Aulasneo: remove contact form
             ("help-center", settings.SUPPORT_SITE_LINK, _("Help Center")),
             ("media_kit", marketing_link("MEDIA_KIT"), _("Media Kit")),
             ("donate", marketing_link("DONATE"), _("Donate")),
@@ -210,7 +210,7 @@ def _footer_navigation_links():
             ("blog", marketing_link("BLOG"), _("Blog")),
             ("news", marketing_link("NEWS"), _("News")),
             ("help-center", settings.SUPPORT_SITE_LINK, _("Help Center")),
-            ("contact", reverse("support:contact_us"), _("Contact")),
+#            ("contact", reverse("support:contact_us"), _("Contact")),  #Aulasneo: remove contact form
             ("careers", marketing_link("CAREERS"), _("Careers")),
             ("donate", marketing_link("DONATE"), _("Donate")),
         ]
