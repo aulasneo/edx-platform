@@ -103,11 +103,11 @@ def _get_course_email_context(course):
     course_title = course.display_name
     course_end_date = get_default_time_display(course.end)
     course_root = reverse('course_root', kwargs={'course_id': course_id})
-    course_url = '{}{}'.format(
-        settings.LMS_ROOT_URL,
-        course_root
-    )
-    image_url = u'{}{}'.format(settings.LMS_ROOT_URL, course_image_url(course))
+ 
+    base_url = configuration_helpers.get_value_for_org(course.org, 'LMS_ROOT_URL', settings.LMS_ROOT_URL)
+     
+    course_url = '{}{}'.format(base_url, course_root)
+    image_url = u'{}{}'.format(base_url, course_image_url(course))
     email_context = {
         'course_title': course_title,
         'course_root': course_root,
@@ -115,12 +115,11 @@ def _get_course_email_context(course):
         'course_url': course_url,
         'course_image_url': image_url,
         'course_end_date': course_end_date,
-        'account_settings_url': '{}{}'.format(settings.LMS_ROOT_URL, reverse('account_settings')),
-        'email_settings_url': '{}{}'.format(settings.LMS_ROOT_URL, reverse('dashboard')),
-        'platform_name': configuration_helpers.get_value('PLATFORM_NAME', settings.PLATFORM_NAME),
+        'account_settings_url': '{}{}'.format(base_url, reverse('account_settings')),
+        'email_settings_url': '{}{}'.format(base_url, reverse('dashboard')),
+        'platform_name': configuration_helpers.get_value_for_org(course.org, 'PLATFORM_NAME', settings.PLATFORM_NAME),
     }
     return email_context
-
 
 def perform_delegate_email_batches(entry_id, course_id, task_input, action_name):
     """
