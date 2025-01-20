@@ -5481,7 +5481,21 @@ EVENT_BUS_PRODUCER_CONFIG = {
             "enabled": _should_send_learning_badge_events,
         },
     },
+    'org.openedx.learning.response.submitted.v1': {
+        'submission-lifecycle': {
+            'event_key_field': 'submission.submission_uid',
+            'enabled': True
+        }
+    },
 }
+
+EVENT_BUS_CONSUMER_CONFIG = {
+    # This consumer its only to test submission functionality
+    # 'org.openedx.learning.response.submitted.v1': {
+    #     'submission-lifecycle': ['submission-group']
+    # }
+}
+
 derived_collection_entry('EVENT_BUS_PRODUCER_CONFIG', 'org.openedx.learning.certificate.created.v1',
                          'learning-certificate-lifecycle', 'enabled')
 derived_collection_entry('EVENT_BUS_PRODUCER_CONFIG', 'org.openedx.learning.certificate.revoked.v1',

@@ -24,7 +24,6 @@ DEBUG = True
 USE_I18N = True
 DEFAULT_TEMPLATE_ENGINE['OPTIONS']['debug'] = True
 LMS_BASE = 'localhost:18000'
-CMS_BASE = 'localhost:18010'
 SITE_NAME = LMS_BASE
 
 SESSION_COOKIE_NAME = 'lms_sessionid'
@@ -504,7 +503,9 @@ CLOSEST_CLIENT_IP_FROM_HEADERS = []
 
 #################### Event bus backend ########################
 EVENT_BUS_PRODUCER = 'edx_event_bus_redis.create_producer'
-EVENT_BUS_REDIS_CONNECTION_URL = 'redis://:password@edx.devstack.redis:6379/'
+# EVENT_BUS_REDIS_CONNECTION_URL = 'redis://:password@edx.devstack.redis:6379/'
+EVENT_BUS_REDIS_CONNECTION_URL = 'redis://redis:6379'
+
 EVENT_BUS_TOPIC_PREFIX = 'dev'
 EVENT_BUS_CONSUMER = 'edx_event_bus_redis.RedisEventConsumer'
 
