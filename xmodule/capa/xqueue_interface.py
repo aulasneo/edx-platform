@@ -135,6 +135,36 @@ class XQueueInterface:
             for f in files_to_upload:
                 files.update({f.name: f})
 
+        from submissions.api import create_submission
+
+        def extract_item_data():
+            header = json.loads(payload["xqueue_header"])
+            callback_url = header['lms_callback_url']
+            queue_name = header.get("queue_name")
+
+            body = json.loads(payload["xqueue_body"])
+            student_info = json.loads(body["student_info"])
+            student_id = student_info.get("anonymous_student_id")
+
+            import re
+            item_id = re.search(r'block@([^\/]+)', callback_url).group(1)
+            item_type = re.search(r'type@([^+]+)', callback_url).group(1)
+            course_id = re.search(r'course-v1:([^\/]+)', callback_url).group(1)
+
+            student_dict = {
+                'item_id': item_id,
+                'item_type': item_type,
+                'course_id': course_id,
+                'student_id': student_id
+            }
+            student_answer = body["student_response"]
+
+            return student_dict, student_answer, queue_name
+
+        student_item, answer, queue_name = extract_item_data()
+        print("STUDENT ITEM ========> ", student_item)
+        create_submission(student_item, answer, queue_name=queue_name, files=files)
+
         return self._http_post(self.url + '/xqueue/submit/', payload, files=files)
 
     def _http_post(self, url, data, files=None):  # lint-amnesty, pylint: disable=missing-function-docstring
@@ -194,6 +224,7 @@ class XQueueService:
             ),
         )
         xqueue_callback_url_prefix = settings.XQUEUE_INTERFACE.get('callback_url', settings.LMS_ROOT_URL)
+        print("=========> ENDPOINT DE SET UPDATE", relative_xqueue_callback_url)
         return xqueue_callback_url_prefix + relative_xqueue_callback_url
 
     @property
