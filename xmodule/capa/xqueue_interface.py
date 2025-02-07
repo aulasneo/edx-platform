@@ -149,7 +149,7 @@ class XQueueInterface:
             import re
             item_id = re.search(r'block@([^\/]+)', callback_url).group(1)
             item_type = re.search(r'type@([^+]+)', callback_url).group(1)
-            course_id = re.search(r'course-v1:([^\/]+)', callback_url).group(1)
+            course_id = re.search(r'(course-v1:[^\/]+)', callback_url).group(1)
 
             student_dict = {
                 'item_id': item_id,
@@ -160,10 +160,14 @@ class XQueueInterface:
             student_answer = body["student_response"]
 
             return student_dict, student_answer, queue_name
-
         student_item, answer, queue_name = extract_item_data()
-        print("STUDENT ITEM ========> ", student_item)
-        create_submission(student_item, answer, queue_name=queue_name, files=files)
+        print("STUDENT ITEM ========> ", files)
+        create_submission(student_item,
+                          answer,
+                          queue_name=queue_name,
+                          grader_file_name="hello_world.py",
+                          points_possible=10,
+                          files=files)
 
         return self._http_post(self.url + '/xqueue/submit/', payload, files=files)
 
