@@ -137,7 +137,7 @@ class XQueueInterface:
 
         from submissions.api import create_submission
 
-        def extract_item_data():
+        def extract_item_data(payload):
             header = json.loads(payload["xqueue_header"])
             callback_url = header['lms_callback_url']
             queue_name = header.get("queue_name")
@@ -146,13 +146,17 @@ class XQueueInterface:
             student_info = json.loads(body["student_info"])
             student_id = student_info.get("anonymous_student_id")
 
+            # Extract components from callback_url
             import re
             item_id = re.search(r'block@([^\/]+)', callback_url).group(1)
             item_type = re.search(r'type@([^+]+)', callback_url).group(1)
             course_id = re.search(r'(course-v1:[^\/]+)', callback_url).group(1)
 
+            # Construct full usage key
+            full_block_id = f"block-v1:{course_id.replace('course-v1:', '')}+type@{item_type}+block@{item_id}"
+
             student_dict = {
-                'item_id': item_id,
+                'item_id': full_block_id,  # Use the full block ID instead of just the short ID
                 'item_type': item_type,
                 'course_id': course_id,
                 'student_id': student_id
@@ -160,7 +164,9 @@ class XQueueInterface:
             student_answer = body["student_response"]
 
             return student_dict, student_answer, queue_name
-        student_item, answer, queue_name = extract_item_data()
+
+        student_item, answer, queue_name = extract_item_data(payload)
+
         print("STUDENT ITEM ========> ", files)
         create_submission(student_item,
                           answer,
