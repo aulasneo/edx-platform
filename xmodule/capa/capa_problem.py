@@ -32,6 +32,8 @@ import xmodule.capa.customrender as customrender
 import xmodule.capa.inputtypes as inputtypes
 import xmodule.capa.responsetypes as responsetypes
 import xmodule.capa.xqueue_interface as xqueue_interface
+import xmodule.capa.xqueue_submission as xqueue_submission
+from xmodule.capa.xqueue_interface import get_flag_by_name
 from xmodule.capa.correctmap import CorrectMap
 from xmodule.capa.safe_exec import safe_exec
 from xmodule.capa.util import contextualize_text, convert_files_to_filenames, get_course_id_from_capa_block
@@ -96,6 +98,7 @@ class LoncapaSystem(object):
     See :class:`DescriptorSystem` for documentation of other attributes.
 
     """
+
     def __init__(
         self,
         ajax_url,
@@ -130,6 +133,7 @@ class LoncapaProblem(object):
     """
     Main class for capa Problems.
     """
+
     def __init__(self, problem_text, id, capa_system, capa_block,  # pylint: disable=redefined-builtin
                  state=None, seed=None, minimal_init=False, extract_tree=True):
         """
