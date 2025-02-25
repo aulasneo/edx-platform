@@ -2,19 +2,19 @@
 This file contains celery tasks for contentstore views
 """
 
+import asyncio
 import base64
 import json
 import os
+import re
 import shutil
 import tarfile
-import re
-import aiohttp
-import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
+from importlib.metadata import entry_points
 from tempfile import NamedTemporaryFile, mkdtemp
 
+import aiohttp
 import olxcleaner
-import pkg_resources
 from ccx_keys.locator import CCXLocator
 from celery import shared_task
 from celery.utils.log import get_task_logger
@@ -28,11 +28,12 @@ from edx_django_utils.monitoring import (
     set_code_owner_attribute,
     set_code_owner_attribute_from_module,
     set_custom_attribute,
-    set_custom_attributes_for_course_key
+    set_custom_attributes_for_course_key,
 )
 from olxcleaner.exceptions import ErrorLevel
 from olxcleaner.reporting import report_error_summary, report_errors
-from opaque_keys.edx.keys import CourseKey
+from opaque_keys import InvalidKeyError
+from opaque_keys.edx.keys import CourseKey, UsageKey
 from opaque_keys.edx.locator import LibraryLocator
 from organizations.api import add_organization_course, ensure_organization
 from organizations.exceptions import InvalidOrganizationException
@@ -46,15 +47,16 @@ import cms.djangoapps.contentstore.errors as UserErrors
 from cms.djangoapps.contentstore.courseware_index import (
     CoursewareSearchIndexer,
     LibrarySearchIndexer,
-    SearchIndexingError
+    SearchIndexingError,
 )
 from cms.djangoapps.contentstore.storage import course_import_export_storage
 from cms.djangoapps.contentstore.utils import (
     IMPORTABLE_FILE_TYPES,
+    create_or_update_xblock_upstream_link,
+    delete_course,
     initialize_permissions,
     reverse_usage_url,
     translation_language,
-    delete_course
 )
 from cms.djangoapps.contentstore.xblock_storage_handlers.view_handlers import get_block_info
 from cms.djangoapps.models.settings.course_metadata import CourseMetadata
@@ -65,11 +67,13 @@ from common.djangoapps.student.roles import CourseInstructorRole, CourseStaffRol
 from common.djangoapps.util.monitoring import monitor_import_failure
 from openedx.core.djangoapps.content.learning_sequences.api import key_supports_outlines
 from openedx.core.djangoapps.content_libraries import api as v2contentlib_api
+from openedx.core.djangoapps.content_tagging.api import make_copied_tags_editable
 from openedx.core.djangoapps.course_apps.toggles import exams_ida_enabled
 from openedx.core.djangoapps.discussions.config.waffle import ENABLE_NEW_STRUCTURE_DISCUSSIONS
 from openedx.core.djangoapps.discussions.models import DiscussionsConfiguration, Provider
 from openedx.core.djangoapps.discussions.tasks import update_unit_discussion_state_from_discussion_blocks
 from openedx.core.djangoapps.embargo.models import CountryAccessRule, RestrictedCourse
+from openedx.core.lib import ensure_cms
 from openedx.core.lib.extract_archive import safe_extractall
 from xmodule.contentstore.django import contentstore
 from xmodule.course_block import CourseFields
@@ -79,6 +83,8 @@ from xmodule.modulestore.django import modulestore
 from xmodule.modulestore.exceptions import DuplicateCourseError, InvalidProctoringProvider, ItemNotFoundError
 from xmodule.modulestore.xml_exporter import export_course_to_xml, export_library_to_xml
 from xmodule.modulestore.xml_importer import CourseImportException, import_course_from_xml, import_library_from_xml
+
+from .models import LearningContextLinksStatus, LearningContextLinksStatusChoices, PublishableEntityLink
 from .outlines import update_outline_from_modulestore
 from .outlines_regenerate import CourseOutlineRegenerate
 from .toggles import bypass_olx_failure_enabled
@@ -90,7 +96,7 @@ LOGGER = get_task_logger(__name__)
 FILE_READ_CHUNK = 1024  # bytes
 FULL_COURSE_REINDEX_THRESHOLD = 1
 ALL_ALLOWED_XBLOCKS = frozenset(
-    [entry_point.name for entry_point in pkg_resources.iter_entry_points("xblock.v1")]
+    [entry_point.name for entry_point in entry_points(group="xblock.v1")]
 )
 
 
@@ -1123,7 +1129,7 @@ def _check_broken_links(task_instance, user_id, course_key_string, language):
     """
     user = _validate_user(task_instance, user_id, language)
 
-    task_instance.status.set_state('Scanning')
+    task_instance.status.set_state(UserTaskStatus.IN_PROGRESS)
     course_key = CourseKey.from_string(course_key_string)
 
     url_list = _scan_course_for_links(course_key)
@@ -1404,3 +1410,80 @@ def _save_broken_links_file(artifact, file_to_save):
 def _write_broken_links_to_file(broken_or_locked_urls, broken_links_file):
     with open(broken_links_file.name, 'w') as file:
         json.dump(broken_or_locked_urls, file, indent=4)
+
+
+@shared_task
+@set_code_owner_attribute
+def handle_create_or_update_xblock_upstream_link(usage_key):
+    """
+    Create or update upstream link for a single xblock.
+    """
+    ensure_cms("handle_create_or_update_xblock_upstream_link may only be executed in a CMS context")
+    try:
+        xblock = modulestore().get_item(UsageKey.from_string(usage_key))
+    except (ItemNotFoundError, InvalidKeyError):
+        LOGGER.exception(f'Could not find item for given usage_key: {usage_key}')
+        return
+    if not xblock.upstream or not xblock.upstream_version:
+        return
+    create_or_update_xblock_upstream_link(xblock, xblock.course_id)
+
+
+@shared_task
+@set_code_owner_attribute
+def create_or_update_upstream_links(
+    course_key_str: str,
+    force: bool = False,
+    replace: bool = False,
+    created: datetime | None = None,
+):
+    """
+    A Celery task to create or update upstream downstream links in database from course xblock content.
+    """
+    ensure_cms("create_or_update_upstream_links may only be executed in a CMS context")
+
+    if not created:
+        created = datetime.now(timezone.utc)
+    course_status = LearningContextLinksStatus.get_or_create(course_key_str, created)
+    if course_status.status in [
+        LearningContextLinksStatusChoices.COMPLETED,
+        LearningContextLinksStatusChoices.PROCESSING
+    ] and not force:
+        return
+    store = modulestore()
+    course_key = CourseKey.from_string(course_key_str)
+    course_status.update_status(
+        LearningContextLinksStatusChoices.PROCESSING,
+        updated=created,
+    )
+    if replace:
+        PublishableEntityLink.objects.filter(downstream_context_key=course_key).delete()
+    try:
+        xblocks = store.get_items(course_key, settings={"upstream": lambda x: x is not None})
+    except ItemNotFoundError:
+        LOGGER.exception(f'Could not find items for given course: {course_key}')
+        course_status.update_status(LearningContextLinksStatusChoices.FAILED)
+        return
+    for xblock in xblocks:
+        create_or_update_xblock_upstream_link(xblock, course_key_str, created)
+    course_status.update_status(LearningContextLinksStatusChoices.COMPLETED)
+
+
+@shared_task
+@set_code_owner_attribute
+def handle_unlink_upstream_block(upstream_usage_key_string: str) -> None:
+    """
+    Handle updates needed to downstream blocks when the upstream link is severed.
+    """
+    ensure_cms("handle_unlink_upstream_block may only be executed in a CMS context")
+
+    try:
+        upstream_usage_key = UsageKey.from_string(upstream_usage_key_string)
+    except (InvalidKeyError):
+        LOGGER.exception(f'Invalid upstream usage_key: {upstream_usage_key_string}')
+        return
+
+    for link in PublishableEntityLink.objects.filter(
+        upstream_usage_key=upstream_usage_key,
+    ):
+        make_copied_tags_editable(str(link.downstream_usage_key))
