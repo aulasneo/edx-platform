@@ -5,94 +5,72 @@ to an external grading system through XQueue.
 
 import json
 import logging
-import re
-from opaque_keys.edx.keys import CourseKey
+
+from xmodule.capa.errors import (
+    GetSubmissionParamsError,
+    JSONParsingError,
+    MissingKeyError,
+    ValidationError,
+    TypeErrorSubmission,
+    RuntimeErrorSubmission
+)
 
 log = logging.getLogger(__name__)
 
 class XQueueInterfaceSubmission:
     """Interface to the external grading system."""
 
+    def __init__(self, block):
+        self.block = block
+
     def _parse_json(self, data, name):
         """Helper function to parse JSON safely."""
         try:
             return json.loads(data) if isinstance(data, str) else data
         except json.JSONDecodeError as e:
-            raise ValueError(f"Error parsing {name}: {e}") from e
+            raise JSONParsingError(name, str(e)) from e
 
-    def _extract_identifiers(self, callback_url):
-        """Extracts identifiers from the callback URL."""
-        item_id_match = re.search(r'block@([^\/]+)', callback_url)
-        item_type_match = re.search(r'type@([^+]+)', callback_url)
-        course_id_match = re.search(r'(course-v1:[^\/]+)', callback_url)
-        max_score_match = re.search(r'(\d+(\.\d+)?)$', callback_url)
-
-        if not all([item_id_match, item_type_match, course_id_match, max_score_match]):
-            raise ValueError("The callback_url does not contain the required information.")
-
-        return (
-            item_id_match.group(1),
-            item_type_match.group(1),
-            course_id_match.group(1),
-            float(max_score_match.group(1))
-        )
-
-    def extract_item_data(self, header, payload):
+    def get_submission_params(self, header, payload):
         """
         Extracts student submission data from the given header and payload.
         """
-
         header = self._parse_json(header, "header")
         payload = self._parse_json(payload, "payload")
 
-        callback_url = header.get('lms_callback_url')
         queue_name = header.get('queue_name', 'default')
 
-        if not callback_url:
-            raise ValueError("The header does not contain 'lms_callback_url'.")
+        if not self.block:
+            raise GetSubmissionParamsError()
 
-        item_id, item_type, course_id, max_score = self._extract_identifiers(callback_url)
+        course_id = str(self.block.scope_ids.usage_id.context_key)
+        item_type = self.block.scope_ids.block_type
+        block_id = self.block.scope_ids.def_id.block_id
+        score = self.block.max_score()
 
-        student_info = self._parse_json(payload["student_info"], "student_info")
-
-        full_block_id = None
-
-        try:
-            full_block_id = (
-                f"block-v1:{course_id.replace('course-v1:', '')}+type@{item_type}+block@{item_id}"
-            )
-        except Exception as e:
-            raise ValueError(
-                f"Error creating BlockUsageLocator. Invalid ID: {full_block_id}, Error: {e}"
-            ) from e
-
-        try:
-            course_key = CourseKey.from_string(course_id)
-        except Exception as e:
-            raise ValueError(f"Error creating CourseKey: {e}") from e
+        item_id = f"block-v1:{course_id.replace('course-v1:', '')}+type@{item_type}+block@{block_id}"
 
         try:
             grader_payload = self._parse_json(payload["grader_payload"], "grader_payload")
             grader = grader_payload.get("grader", '')
         except KeyError as e:
-            raise ValueError(f"Error in payload: {e}") from e
+            raise MissingKeyError("grader_payload") from e
 
+        student_info = self._parse_json(payload["student_info"], "student_info")
         student_id = student_info.get("anonymous_student_id")
+
         if not student_id:
-            raise ValueError("The field 'anonymous_student_id' is missing from student_info.")
+            raise ValidationError("The field 'anonymous_student_id' is missing from student_info.")
+
+        student_answer = payload.get("student_response")
+        if student_answer is None:
+            raise ValidationError("The field 'student_response' does not exist.")
 
         student_dict = {
-            'item_id': full_block_id,
+            'item_id': item_id,
             'item_type': item_type,
             'course_id': course_id,
             'student_id': student_id
         }
-
-        student_answer = payload.get("student_response")
-        if student_answer is None:
-            raise ValueError("The field 'student_response' does not exist.")
-
-        score = max_score
 
         return student_dict, student_answer, queue_name, grader, score
 
@@ -103,25 +81,31 @@ class XQueueInterfaceSubmission:
         from submissions.api import create_submission
 
         try:
-            student_item, answer, queue_name, grader, score = self.extract_item_data(header, body)
-            return create_submission(student_item, answer, queue_name=queue_name, grader=grader, score=score)
+            student_item, answer, queue_name, grader, score = self.get_submission_params(header, body)
+            return create_submission(
+                student_item,
+                answer,
+                queue_name=queue_name,
+                grader=grader,
+                score=score,
+                file=files_to_upload
+            )
+        except JSONParsingError as e:
+            log.error("%s", e)
+            return {"error": str(e)}
 
-        except json.JSONDecodeError as e:
-            log.error("JSON decoding error: %s", e)
-            return {"error": "Invalid JSON format"}
+        except MissingKeyError as e:
+            log.error("%s", e)
+            return {"error": str(e)}
 
-        except KeyError as e:
-            log.error("Missing key: %s", e)
-            return {"error": f"Missing key: {e}"}
-
-        except ValueError as e:
-            log.error("Validation error: %s", e)
-            return {"error": f"Validation error: {e}"}
+        except ValidationError as e:
+            log.error("%s", e)
+            return {"error": str(e)}
 
         except TypeError as e:
-            log.error("Type error: %s", e)
-            return {"error": f"Type error: {e}"}
+            log.error("%s", e)
+            raise TypeErrorSubmission(str(e)) from e
 
         except RuntimeError as e:
-            log.error("Runtime error: %s", e)
-            return {"error": f"Runtime error: {e}"}
+            log.error("%s", e)
+            raise RuntimeErrorSubmission(str(e)) from e

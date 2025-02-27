@@ -56,11 +56,11 @@ from chem import chemcalc
 
 from lxml import etree
 
-from xmodule.capa.xqueue_interface import XQUEUE_TIMEOUT, get_flag_by_name
+from xmodule.capa.xqueue_interface import XQUEUE_TIMEOUT
 from openedx.core.djangolib.markup import HTML, Text
 from xmodule.stringify import stringify_children
 
-from . import xqueue_interface, xqueue_submission
+from . import xqueue_interface
 from .registry import TagRegistry
 from .util import sanitize_html
 

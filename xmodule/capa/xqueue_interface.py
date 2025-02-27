@@ -106,11 +106,15 @@ class XQueueInterface:
     Interface to the external grading system
     """
 
-    def __init__(self, url: str, django_auth: Dict[str, str], requests_auth: Optional[HTTPBasicAuth] = None):
+    def __init__(self, url: str, django_auth: Dict[str, str],
+                 requests_auth: Optional[HTTPBasicAuth] = None,
+                 block: 'ProblemBlock' = None):
         self.url = url
         self.auth = django_auth
         self.session = requests.Session()
         self.session.auth = requests_auth
+        self.block = block
+        self.submission = XQueueInterfaceSubmission(self.block)
 
     def send_to_queue(self, header, body, files_to_upload=None):
         """
@@ -165,16 +169,17 @@ class XQueueInterface:
             for f in files_to_upload:
                 files.update({f.name: f})
 
-        header_info = json.loads(header)
-        course_id = get_course_id(header_info['lms_callback_url'])
+        course_id = str(self.block.scope_ids.usage_id.context_key)
         if is_flag_active('send_to_submission_course.enable', course_id):
             # Use the new edx-submissions workflow
-            submission = XQueueInterfaceSubmission().send_to_submission(header, body, files)
+            submission = self.submission.send_to_submission(header, body, files)
             log.error(submission)
             return None, ''
 
         else:
-            return self._http_post(self.url + '/xqueue/submit/', payload, files=files)
+            return self._http_post(
+            self.url + '/xqueue/submit/', payload, files=files
+        )
 
     def _http_post(self, url, data, files=None):  # lint-amnesty, pylint: disable=missing-function-docstring
         try:
@@ -204,14 +209,15 @@ class XQueueService:
     """
 
     def __init__(self, block: 'ProblemBlock'):
-        #breakpoint()
         basic_auth = settings.XQUEUE_INTERFACE.get('basic_auth')
         requests_auth = HTTPBasicAuth(*basic_auth) if basic_auth else None
         self._interface = XQueueInterface(
-            settings.XQUEUE_INTERFACE['url'], settings.XQUEUE_INTERFACE['django_auth'], requests_auth
+            settings.XQUEUE_INTERFACE['url'], settings.XQUEUE_INTERFACE['django_auth'], requests_auth,
+            block=block
         )
 
         self._block = block
+
 
     @property
     def interface(self):
@@ -220,36 +226,33 @@ class XQueueService:
         """
         return self._interface
 
-    def construct_callback(self, dispatch: str = 'score_update') -> str:
+    def construct_callback(self, dispatch: str = "score_update") -> str:
         """
-        Return a fully qualified callback URL for external queueing system.
+        Return a fully qualified callback URL for the external queueing system.
         """
-        dispatch_callback = "callback_submission"
+        course_id = str(self._block.scope_ids.usage_id.context_key)
+        userid = str(self._block.scope_ids.user_id)
+        mod_id = str(self._block.scope_ids.usage_id)
+
+        callback_type = (
+            "callback_submission"
+            if is_flag_active("send_to_submission_course.enable", course_id)
+            else "xqueue_callback"
+        )
+
         relative_xqueue_callback_url = reverse(
-        dispatch_callback,
-        kwargs=dict(
-            course_id=str(self._block.scope_ids.usage_id.context_key),
-            userid=str(self._block.scope_ids.user_id),
-            mod_id=str(self._block.scope_ids.usage_id),
-            dispatch=dispatch,
-        ))
-        xqueue_callback_url_prefix = settings.XQUEUE_INTERFACE.get('callback_url', settings.LMS_ROOT_URL)
-        lms_callback_url = xqueue_callback_url_prefix + relative_xqueue_callback_url
-        course_id = get_course_id(lms_callback_url)
-        if is_flag_active('send_to_submission_course.enable', course_id):
-            return xqueue_callback_url_prefix + relative_xqueue_callback_url + str(self._block.max_score())
-        else:
-            dispatch_callback = 'xqueue_callback'
-            relative_xqueue_callback_url = reverse(
-            dispatch_callback,
-            kwargs=dict(
-                course_id=str(self._block.scope_ids.usage_id.context_key),
-                userid=str(self._block.scope_ids.user_id),
-                mod_id=str(self._block.scope_ids.usage_id),
-                dispatch=dispatch,
-            ))
-            xqueue_callback_url_prefix = settings.XQUEUE_INTERFACE.get('callback_url', settings.LMS_ROOT_URL)
-            return xqueue_callback_url_prefix + relative_xqueue_callback_url
+            callback_type,
+            kwargs={
+                "course_id": course_id,
+                "userid": userid,
+                "mod_id": mod_id,
+                "dispatch": dispatch,
+            },
+        )
+
+        xqueue_callback_url_prefix = settings.XQUEUE_INTERFACE.get("callback_url", settings.LMS_ROOT_URL)
+        return f"{xqueue_callback_url_prefix}{relative_xqueue_callback_url}"
+
 
     @property
     def default_queuename(self) -> str:

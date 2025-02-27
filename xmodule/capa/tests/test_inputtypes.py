@@ -476,12 +476,10 @@ class CodeInputTest(unittest.TestCase):
         assert context == expected
 
 
-@pytest.mark.django_db
 class MatlabTest(unittest.TestCase):
     """
     Test Matlab input types
     """
-
     def setUp(self):
         super(MatlabTest, self).setUp()  # lint-amnesty, pylint: disable=super-with-arguments
         self.rows = '10'
@@ -930,40 +928,6 @@ class MatlabTest(unittest.TestCase):
         expected = ""
         assert self.the_input._get_render_context()['msg'] == expected  # pylint: disable=protected-access
 
-    @patch('xmodule.capa.inputtypes.get_flag_by_name', return_value=True)
-    @patch('xmodule.capa.inputtypes.datetime')
-    def test_plot_data_with_flag_active(self, mock_datetime, mock_get_flag_by_name):
-        """
-        Test that the correct date format is used when the flag is active.
-        """
-        mock_datetime.utcnow.return_value.strftime.return_value = 'formatted_date_with_flag'
-        data = {'submission': 'x = 1234;'}
-        response = self.the_input.handle_ajax("plot", data)
-        self.the_input.capa_system.xqueue.interface.send_to_queue.assert_called_with(header=ANY, body=ANY)
-        assert response['success']
-        assert self.the_input.input_state['queuekey'] is not None
-        assert self.the_input.input_state['queuestate'] == 'queued'
-        assert 'formatted_date_with_flag' in self.the_input.capa_system.xqueue.interface.send_to_queue.call_args[1][
-            'body'
-        ]
-
-    @patch('xmodule.capa.inputtypes.get_flag_by_name', return_value=False)
-    @patch('xmodule.capa.inputtypes.datetime')
-    def test_plot_data_with_flag_inactive(self, mock_datetime, mock_get_flag_by_name):
-        """
-        Test that the correct date format is used when the flag is inactive.
-        """
-        mock_datetime.utcnow.return_value.strftime.return_value = 'formatted_date_without_flag'
-        data = {'submission': 'x = 1234;'}
-        response = self.the_input.handle_ajax("plot", data)
-        self.the_input.capa_system.xqueue.interface.send_to_queue.assert_called_with(header=ANY, body=ANY)
-        assert response['success']
-        assert self.the_input.input_state['queuekey'] is not None
-        assert self.the_input.input_state['queuestate'] == 'queued'
-        assert 'formatted_date_without_flag' in self.the_input.capa_system.xqueue.interface.send_to_queue.call_args[1][
-            'body'
-        ]
-
 
 def html_tree_equal(received, expected):
     """
@@ -983,7 +947,6 @@ class SchematicTest(unittest.TestCase):
     """
     Check that schematic inputs work
     """
-
     def test_rendering(self):
         height = '12'
         width = '33'
@@ -1039,7 +1002,6 @@ class ImageInputTest(unittest.TestCase):
     """
     Check that image inputs work
     """
-
     def check(self, value, egx, egy):  # lint-amnesty, pylint: disable=missing-function-docstring
         height = '78'
         width = '427'
@@ -1099,7 +1061,6 @@ class CrystallographyTest(unittest.TestCase):
     """
     Check that crystallography inputs work
     """
-
     def test_rendering(self):
         height = '12'
         width = '33'
@@ -1141,7 +1102,6 @@ class VseprTest(unittest.TestCase):
     """
     Check that vsepr inputs work
     """
-
     def test_rendering(self):
         height = '12'
         width = '33'
@@ -1189,7 +1149,6 @@ class ChemicalEquationTest(unittest.TestCase):
     """
     Check that chemical equation inputs work.
     """
-
     def setUp(self):
         super(ChemicalEquationTest, self).setUp()  # lint-amnesty, pylint: disable=super-with-arguments
         self.size = "42"
@@ -1285,7 +1244,6 @@ class FormulaEquationTest(unittest.TestCase):
     """
     Check that formula equation inputs work.
     """
-
     def setUp(self):
         super(FormulaEquationTest, self).setUp()  # lint-amnesty, pylint: disable=super-with-arguments
         self.size = "42"
@@ -1434,7 +1392,6 @@ class DragAndDropTest(unittest.TestCase):
     """
     Check that drag and drop inputs work
     """
-
     def test_rendering(self):
         path_to_images = '/dummy-static/images/'
 
@@ -1509,7 +1466,6 @@ class AnnotationInputTest(unittest.TestCase):
     """
     Make sure option inputs work
     """
-
     def test_rendering(self):
         xml_str = '''
 <annotationinput>
@@ -1670,7 +1626,6 @@ class TestStatus(unittest.TestCase):
     """
     Tests for Status class
     """
-
     def test_str(self):
         """
         Test stringifing Status objects

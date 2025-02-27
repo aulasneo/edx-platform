@@ -46,22 +46,6 @@ class XQueueServiceTest(TestCase):
         course_id = str(usage_id.course_key)
         callback_url = f"courses/{course_id}/xqueue/user1/{usage_id}"
 
-        assert self.service.construct_callback() == f"{settings.LMS_ROOT_URL}/{callback_url}/score_update10"
-        assert self.service.construct_callback("alt_dispatch") == (
-            f"{settings.LMS_ROOT_URL}/{callback_url}/alt_dispatch10"
-        )
-
-        custom_callback_url = "http://alt.url"
-        with override_settings(XQUEUE_INTERFACE={**settings.XQUEUE_INTERFACE, "callback_url": custom_callback_url}):
-            assert self.service.construct_callback() == f"{custom_callback_url}/{callback_url}/score_update10"
-
-    @patch("xmodule.capa.xqueue_interface.is_flag_active", return_value=False)
-    def test_construct_callback_with_flag_disabled(self, mock_flag):
-        """Test construct_callback when the waffle flag is disabled."""
-        usage_id = self.block.scope_ids.usage_id
-        course_id = str(usage_id.course_key)
-        callback_url = f"courses/{course_id}/xqueue/user1/{usage_id}"
-
         assert self.service.construct_callback() == f"{settings.LMS_ROOT_URL}/{callback_url}/score_update"
         assert self.service.construct_callback("alt_dispatch") == (
             f"{settings.LMS_ROOT_URL}/{callback_url}/alt_dispatch"
@@ -70,6 +54,19 @@ class XQueueServiceTest(TestCase):
         custom_callback_url = "http://alt.url"
         with override_settings(XQUEUE_INTERFACE={**settings.XQUEUE_INTERFACE, "callback_url": custom_callback_url}):
             assert self.service.construct_callback() == f"{custom_callback_url}/{callback_url}/score_update"
+
+    @patch("xmodule.capa.xqueue_interface.is_flag_active", return_value=False)
+    def test_construct_callback_with_flag_disabled(self, mock_flag):
+        """Test construct_callback when the waffle flag is disabled."""
+        usage_id = self.block.scope_ids.usage_id
+        callback_url = f'courses/{usage_id.context_key}/xqueue/user1/{usage_id}'
+
+        assert self.service.construct_callback() == f'{settings.LMS_ROOT_URL}/{callback_url}/score_update'
+        assert self.service.construct_callback('alt_dispatch') == f'{settings.LMS_ROOT_URL}/{callback_url}/alt_dispatch'
+
+        custom_callback_url = 'http://alt.url'
+        with override_settings(XQUEUE_INTERFACE={**settings.XQUEUE_INTERFACE, 'callback_url': custom_callback_url}):
+            assert self.service.construct_callback() == f'{custom_callback_url}/{callback_url}/score_update'
 
     def test_default_queuename(self):
         """Check the format of the default queue name."""
@@ -90,7 +87,8 @@ def test_send_to_queue_with_flag_enabled(mock_send_to_submission, mock_flag):
     """Test send_to_queue when the waffle flag is enabled."""
     url = "http://example.com/xqueue"
     django_auth = {"username": "user", "password": "pass"}
-    xqueue_interface = XQueueInterface(url, django_auth)
+    block = Mock()  # Mock block for the constructor
+    xqueue_interface = XQueueInterface(url, django_auth, block=block)
 
     header = json.dumps({
         "lms_callback_url": (
@@ -117,7 +115,8 @@ def test_send_to_queue_with_flag_disabled(mock_http_post, mock_flag):
     """Test send_to_queue when the waffle flag is disabled."""
     url = "http://example.com/xqueue"
     django_auth = {"username": "user", "password": "pass"}
-    xqueue_interface = XQueueInterface(url, django_auth)
+    block = Mock()  # Mock block for the constructor
+    xqueue_interface = XQueueInterface(url, django_auth, block=block)
 
     header = json.dumps({
         "lms_callback_url": (

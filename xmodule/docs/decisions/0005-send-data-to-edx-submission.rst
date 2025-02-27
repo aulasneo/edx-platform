@@ -7,7 +7,7 @@ Status
 
 Accepted.
 
-2025-02-21
+2025-02-27
 
 Context
 *******
@@ -27,39 +27,13 @@ Key changes include:
 
 3. **`construct_callback` Method Update**: Within the `XQueueService` class in `xqueue_interfaces.py`, the `construct_callback` method was modified. This method generates the callback URL that `XQueue` or `edx-submission` will use to return the evaluation results. The method now checks the state of the `send_to_submission_course.enable` *waffle flag* to determine whether the callback URL should point to the `edx-submission` handler (`callback_submission`) or to the original `XQueue` handler (`xqueue_callback`).
 
-   Additionally, the method now appends the `max_score` value to the callback URL when using `edx-submission`. This ensures that `xqueue_submission.py` can extract and pass the `max_score` value correctly to `create_submission`.
-
-   **Updated Logic in `construct_callback`**:
-   .. code-block:: python
-
-      if is_flag_active('send_to_submission_course.enable', course_id):
-          return f"{xqueue_callback_url_prefix}{relative_xqueue_callback_url}{self.block.max_score()}"
-      else:
-          return f"{xqueue_callback_url_prefix}{relative_xqueue_callback_url}"
+   The updated logic in `construct_callback` involves checking the state of the waffle flag and constructing the callback URL accordingly. If the flag is active for a given course, the callback URL is constructed for `edx-submission`; otherwise, it is constructed for `XQueue`.
 
 4. **Implementation of `send_to_submission` in `xqueue_submission.py`**: The `send_to_submission` function was developed in the `xqueue_submission.py` file. This function is responsible for:
-   - **Parse Submission Data**: Extracts and processes relevant information from the student response, including identifiers such as `course_id`, `item_id`, `student_id`, and now `max_score`.
+   - **Parsing Submission Data**: Extracts and processes relevant information from the student response, including identifiers such as `course_id`, `item_id`, `student_id`, and `max_score`.
    
-   - **Extraction of `max_score` from Callback URL**: The function was updated to extract `max_score` using a regex pattern from the callback URL.
-   
-   .. code-block:: python
-
-      def _extract_identifiers(self, callback_url):
-          max_score_match = re.search(r'(\d+(\.\d+)?)$', callback_url)
-          if max_score_match:
-              max_score = float(max_score_match.group(1))
-          else:
-              raise ValueError("The callback URL does not contain max_score.")
-          return max_score
-
    - **Interaction with `edx-submission`**: Uses the API provided by `edx-submission` to create a new submission record in the submissions database, ensuring that the student response is stored and processed appropriately with the correct `max_score`.
 
-   .. code-block:: python
-
-      def send_to_submission(self, header, body, files_to_upload=None):
-          student_item, student_answer, queue_name, grader, max_score = self.extract_item_data(header, body)
-          return create_submission(student_item, student_answer, queue_name=queue_name, grader=grader, score=max_score)
-          
 Configuration for Xqueue-watcher:
 
 Prerequisites

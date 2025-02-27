@@ -21,17 +21,17 @@ def xqueue_service():
         "ExampleProblem"
     )
     block = Mock(scope_ids=ScopeIds('user1', 'mock_problem', location, location))
-    return XQueueInterfaceSubmission()
+    return XQueueInterfaceSubmission(block)
 
 
-def test_extract_item_data():
+def test_get_submission_params(xqueue_service):
     """
     Test extracting item data from an xqueue submission.
     """
     header = json.dumps({
         'lms_callback_url': (
-            'http://example.com/courses/course-v1:org+course+run/xqueue/5/'
-            'block-v1:org+course+run+type@problem+block@item_id/5.0'
+            'http://example.com/courses/course-v1:test_org+test_course+test_run/xqueue/5/'
+            'block-v1:test_org+test_course+test_run+type@problem+block@item_id/'
         ),
         'queue_name': 'default'
     })
@@ -42,21 +42,21 @@ def test_extract_item_data():
     })
 
     student_item, student_answer, queue_name, grader, score = (
-        XQueueInterfaceSubmission().extract_item_data(header, payload)
+        xqueue_service.get_submission_params(header, payload)
     )
 
     assert student_item == {
         'item_id': (
-            'block-v1:org+course+run+type@problem+block@item_id'
+            'block-v1:test_org+test_course+test_run+type@mock_problem+block@ExampleProblem'
         ),
-        'item_type': 'problem',
-        'course_id': 'course-v1:org+course+run',
+        'item_type': 'mock_problem',
+        'course_id': 'course-v1:test_org+test_course+test_run',
         'student_id': 'student_id'
     }
     assert student_answer == 'student_answer'
     assert queue_name == 'default'
     assert grader == 'test.py'
-    assert score == 5.0
+    assert score == xqueue_service.block.max_score()  # Mocked max_score value
 
 
 @pytest.mark.django_db
@@ -68,8 +68,7 @@ def test_send_to_submission(mock_create_submission, xqueue_service):
     header = json.dumps({
         'lms_callback_url': (
             'http://example.com/courses/course-v1:test_org+test_course+test_run/xqueue/5/'
-            'block-v1:test_org+test_course+test_run+type@problem+block@item_id/'
-            '0.85'
+            'block-v1:test_org+test_course+test_run+type@mock_problem+block@ExampleProblem/'
         ),
     })
     body = json.dumps({
@@ -79,7 +78,7 @@ def test_send_to_submission(mock_create_submission, xqueue_service):
     })
 
     with patch('lms.djangoapps.courseware.models.StudentModule.objects.filter') as mock_filter:
-        mock_filter.return_value.first.return_value = Mock(grade=0.85)
+        mock_filter.return_value.first.return_value = Mock(grade=10)
 
         mock_create_submission.return_value = {'submission': 'mock_submission'}
 
@@ -91,15 +90,16 @@ def test_send_to_submission(mock_create_submission, xqueue_service):
         assert result['submission'] == 'mock_submission'
         mock_create_submission.assert_called_once_with(
             {
-                'item_id': 'block-v1:test_org+test_course+test_run+type@problem+block@item_id',
-                'item_type': 'problem',
+                'item_id': 'block-v1:test_org+test_course+test_run+type@mock_problem+block@ExampleProblem',
+                'item_type': 'mock_problem',
                 'course_id': 'course-v1:test_org+test_course+test_run',
                 'student_id': 'student_id'
             },
             'student_answer',
-            queue_name='default',
+            queue_name='default',  
             grader='test.py',
-            score=0.85
+            score=xqueue_service.block.max_score(),  # Mocked max_score value
+            file=None
         )
 
 
@@ -112,7 +112,7 @@ def test_send_to_submission_with_missing_fields(mock_create_submission, xqueue_s
     header = json.dumps({
         'lms_callback_url': (
             'http://example.com/courses/course-v1:test_org+test_course+test_run/xqueue/5/'
-            'block@item_id/5.0'
+            'block@item_id/'
         )
     })
     body = json.dumps({
